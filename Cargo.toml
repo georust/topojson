@@ -1,0 +1,14 @@
+[package]
+
+name = "topojson"
+description = "TopoJSON utilities for Rust"
+version = "0.0.1"
+authors = ["Alex Morega <alex@grep.ro>"]
+license = "MIT"
+repository = "https://github.com/georust/rust-geojson"
+
+[dependencies]
+rustc-serialize = "0.2"
+
+[dependencies.geojson]
+git = "https://github.com/georust/rust-geojson.git"
