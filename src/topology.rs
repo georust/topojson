@@ -23,6 +23,25 @@ fn parse_transform(json: &Json) -> TopoJsonResult<(f64, f64, f64, f64)> {
     return Ok((t0, t1, s0, s1));
 }
 
+fn map_arc(arc_json: &Array, tr: (f64, f64, f64, f64)) -> TopoJsonResult<Vec<Json>> {
+    let (t0, t1, s0, s1) = tr;
+    let mut arc = vec![];
+    let mut x = 0;
+    let mut y = 0;
+    for point_json in arc_json.iter() {
+        let mut p = expect_array!(point_json).clone();
+        if p.len() < 2 {
+            return Err(TopoJsonError::new("Point must have at least two elements"));
+        }
+        x += expect_i64!(p[0]);
+        y += expect_i64!(p[1]);
+        p[0] = Json::F64((x as f64) * s0 + t0);
+        p[1] = Json::F64((y as f64) * s1 + t1);
+        arc.push(Json::Array(p));
+    }
+    return Ok(arc);
+}
+
 struct Space {
     arcs: Vec<Vec<Json>>,
     transform: Option<(f64, f64, f64, f64)>,
@@ -37,23 +56,7 @@ impl Space {
         let mut arcs = vec![];
         for arc_json in expect_array!(expect_property!(topo, "arcs", "Missing 'arcs' field")).iter() {
             let arc = match transform {
-                Some((t0, t1, s0, s1)) => {
-                    let mut arc = vec![];
-                    let mut x = 0;
-                    let mut y = 0;
-                    for point_json in expect_array!(arc_json).iter() {
-                        let mut p = expect_array!(point_json).clone();
-                        if p.len() < 2 {
-                            return Err(TopoJsonError::new("Point must have at least two elements"));
-                        }
-                        x += expect_i64!(p[0]);
-                        y += expect_i64!(p[1]);
-                        p[0] = Json::F64((x as f64) * s0 + t0);
-                        p[1] = Json::F64((y as f64) * s1 + t1);
-                        arc.push(Json::Array(p));
-                    }
-                    arc
-                },
+                Some(tr) => try!(map_arc(expect_array!(arc_json), tr)),
                 None => expect_array!(arc_json).clone()
             };
             arcs.push(arc);
