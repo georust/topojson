@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use rustc_serialize::json::{Json, ToJson, Object, Array};
-use geojson::{FeatureCollection, Feature, Pos};
+use geojson::{FeatureCollection, Feature};
 use {TopoJsonResult, TopoJsonError};
 
 pub struct Topology(BTreeMap<String, FeatureCollection>);
@@ -24,7 +24,7 @@ fn parse_transform(json: &Json) -> TopoJsonResult<(f64, f64, f64, f64)> {
 }
 
 struct Space {
-    arcs: Vec<Vec<Pos>>,
+    arcs: Vec<Vec<Json>>,
     transform: Option<(f64, f64, f64, f64)>,
 }
 
@@ -36,9 +36,9 @@ impl Space {
         };
         let mut arcs = vec![];
         for arc_json in expect_array!(expect_property!(topo, "arcs", "Missing 'arcs' field")).iter() {
-            let mut arc = vec![];
-            match transform {
+            let arc = match transform {
                 Some((t0, t1, s0, s1)) => {
+                    let mut arc = vec![];
                     let mut x = 0;
                     let mut y = 0;
                     for point_json in expect_array!(arc_json).iter() {
@@ -50,14 +50,11 @@ impl Space {
                         y += expect_i64!(p[1]);
                         p[0] = Json::F64((x as f64) * s0 + t0);
                         p[1] = Json::F64((y as f64) * s1 + t1);
-                        arc.push(Pos::from_json(&p));
+                        arc.push(Json::Array(p));
                     }
+                    arc
                 },
-                None => {
-                    for point_json in expect_array!(arc_json).iter() {
-                        arc.push(Pos::from_json(expect_array!(point_json)));
-                    }
-                }
+                None => expect_array!(arc_json).clone()
             };
             arcs.push(arc);
         }
@@ -92,9 +89,9 @@ impl Space {
         }
         let arc = &self.arcs[offset];
         let arcs_json = if inverse {
-            arc.iter().rev().map(|pos| pos.to_json()).collect()
+            arc.iter().rev().map(|p| p.to_json()).collect()
         } else {
-            arc.iter().map(|pos| pos.to_json()).collect()
+            arc.iter().map(|p| p.to_json()).collect()
         };
         return Ok(Json::Array(arcs_json));
     }
