@@ -8,22 +8,76 @@ pub struct Topology(BTreeMap<String, FeatureCollection>);
 // doesn't have to be a FeatureCollection (which is spelled
 // GeometryCollection in TopoJSON).
 
+fn parse_transform(json: &Json) -> TopoJsonResult<(f64, f64, f64, f64)> {
+    let transform = expect_object!(json);
+    let translate = expect_array!(expect_property!(transform, "translate", "Missing 'translate' field"));
+    let scale = expect_array!(expect_property!(transform, "scale", "Missing 'scale' field"));
+    match (translate.len(), scale.len()) {
+        (2, 2) => (),
+        _ => return Err(TopoJsonError::new("Both 'translate' and 'scale' must be two-element arrays"))
+    };
+    let t0 = expect_f64!(translate[0]);
+    let t1 = expect_f64!(translate[1]);
+    let s0 = expect_f64!(scale[0]);
+    let s1 = expect_f64!(scale[1]);
+    return Ok((t0, t1, s0, s1));
+}
 
 struct Space {
     arcs: Vec<Vec<Pos>>,
+    transform: Option<(f64, f64, f64, f64)>,
 }
 
 impl Space {
     fn from_topology(topo: &Object) -> TopoJsonResult<Space> {
+        let transform = match topo.get("transform") {
+            Some(transform_json) => Some(try!(parse_transform(transform_json))),
+            None => None
+        };
         let mut arcs = vec![];
         for arc_json in expect_array!(expect_property!(topo, "arcs", "Missing 'arcs' field")).iter() {
             let mut arc = vec![];
-            for pos_json in expect_array!(arc_json).iter() {
-                arc.push(Pos::from_json(expect_array!(pos_json)));
-            }
+            match transform {
+                Some((t0, t1, s0, s1)) => {
+                    let mut x = 0;
+                    let mut y = 0;
+                    for point_json in expect_array!(arc_json).iter() {
+                        let mut p = expect_array!(point_json).clone();
+                        if p.len() < 2 {
+                            return Err(TopoJsonError::new("Point must have at least two elements"));
+                        }
+                        x += expect_i64!(p[0]);
+                        y += expect_i64!(p[1]);
+                        p[0] = Json::F64((x as f64) * s0 + t0);
+                        p[1] = Json::F64((y as f64) * s1 + t1);
+                        arc.push(Pos::from_json(&p));
+                    }
+                },
+                None => {
+                    for point_json in expect_array!(arc_json).iter() {
+                        arc.push(Pos::from_json(expect_array!(point_json)));
+                    }
+                }
+            };
             arcs.push(arc);
         }
-        return Ok(Space{arcs: arcs});
+        return Ok(Space{arcs: arcs, transform: transform});
+    }
+
+    pub fn point(&self, p: &Vec<Json>) -> TopoJsonResult<Vec<Json>> {
+        if p.len() < 2 {
+            return Err(TopoJsonError::new("Point must have at least two elements"));
+        }
+        let mut rv = p.clone();
+        println!("{:?}", self.transform);
+        match self.transform {
+            Some((t0, t1, s0, s1)) => {
+                rv[0] = Json::F64(expect_f64!(rv[0]) * s0 + t0);
+                rv[1] = Json::F64(expect_f64!(rv[1]) * s1 + t1);
+            },
+            None => ()
+        };
+        return Ok(rv);
     }
 
     pub fn arc(&self, arc_index: isize) -> TopoJsonResult<Json> {
@@ -47,8 +101,8 @@ impl Space {
 }
 
 
-fn transform_coordinates(topo_coord: &Array) -> Json {
-    return Json::Array(topo_coord.clone());
+fn transform_coordinates(topo_coord: &Array, space: &Space) -> TopoJsonResult<Json> {
+    return Ok(Json::Array(try!(space.point(topo_coord))));
 }
 
 fn transform_arcs(arcs: &Array, space: &Space, depth: usize) -> TopoJsonResult<Json> {
@@ -80,7 +134,7 @@ fn parse_geometry(object: &Object, space: &Space) -> TopoJsonResult<Feature> {
     let coordinates = match geometry_type {
         "Point" => {
             let topo_coord = expect_property!(object, "coordinates", "Missing 'coordinates' property");
-            transform_coordinates(expect_array!(topo_coord))
+            try!(transform_coordinates(expect_array!(topo_coord), space))
         },
         "LineString" | "Polygon" => {
             let arcs = expect_property!(object, "arcs", "Missing 'arcs' property");
@@ -173,5 +227,18 @@ mod tests {
         let example = topology.object("example").unwrap();
         let geojson = format!("{}", example.to_json());
         assert_eq!(geojson, r#"{"features":[{"geometry":{"coordinates":[102.0,0.5],"type":"Point"},"properties":{"prop0":"value0"},"type":"Feature"},{"geometry":{"coordinates":[[102.0,0.0],[103.0,1.0],[104.0,0.0],[105.0,1.0]],"type":"LineString"},"properties":{"prop0":"value0","prop1":0},"type":"Feature"},{"geometry":{"coordinates":[[[100.0,0.0],[100.0,1.0],[101.0,1.0],[101.0,0.0],[100.0,0.0]]],"type":"Polygon"},"properties":{"prop0":"value0","prop1":{"this":"that"}},"type":"Feature"}],"type":"FeatureCollection"}"#);
+    }
+
+    #[test]
+    fn test_parse_quantized_topology_from_spec() {
+        let topo_str = r#"{"objects":{"example":{"type":"GeometryCollection","geometries":[{"type":"Point","properties":{"prop0":"value0"},"coordinates":[4000,5000]},{"type":"LineString","properties":{"prop0":"value0","prop1":0},"arcs":[0]},{"type":"Polygon","properties":{"prop0":"value0","prop1":{"this":"that"}},"arcs":[[1]]}]}},"type":"Topology","transform":{"translate":[100,0],"scale":[0.0005000500050005,0.00010001000100010001]},"arcs":[[[4000,0],[1999,9999],[2000,-9999],[2000,9999]],[[0,0],[0,9999],[2000,0],[0,-9999],[-2000,0]]]}"#;
+        let topo_json = Json::from_str(topo_str).unwrap();
+        let topology = match Topology::from_json(&topo_json) {
+            Ok(t) => t,
+            Err(e) => panic!(e.desc)
+        };
+        let example = topology.object("example").unwrap();
+        let geojson = format!("{}", example.to_json());
+        assert_eq!(geojson, r#"{"features":[{"geometry":{"coordinates":[102.0002,0.50005],"type":"Point"},"properties":{"prop0":"value0"},"type":"Feature"},{"geometry":{"coordinates":[[102.0002,0.0],[102.9998,1.0],[103.9999,0.0],[105.0,1.0]],"type":"LineString"},"properties":{"prop0":"value0","prop1":0},"type":"Feature"},{"geometry":{"coordinates":[[[100.0,0.0],[100.0,1.0],[101.0001,1.0],[101.0001,0.0],[100.0,0.0]]],"type":"Polygon"},"properties":{"prop0":"value0","prop1":{"this":"that"}},"type":"Feature"}],"type":"FeatureCollection"}"#);
     }
 }
