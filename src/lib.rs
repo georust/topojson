@@ -2,6 +2,7 @@ extern crate "rustc-serialize" as rustc_serialize;
 extern crate geojson;
 
 pub use topology::Topology;
+pub use error::{TopoJsonError, TopoJsonResult};
 
 macro_rules! expect_string {
     ($value:expr) => (try!(
@@ -58,16 +59,4 @@ macro_rules! expect_property {
 }
 
 mod topology;
-
-#[derive(Copy)]
-pub struct TopoJsonError {
-    pub desc: &'static str,
-}
-
-impl TopoJsonError {
-    pub fn new(desc: &'static str) -> TopoJsonError {
-        return TopoJsonError{desc: desc};
-    }
-}
-
-pub type TopoJsonResult<T> = Result<T, TopoJsonError>;
+mod error;
