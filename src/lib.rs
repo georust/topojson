@@ -1,3 +1,4 @@
+extern crate core;
 extern crate "rustc-serialize" as rustc_serialize;
 extern crate geojson;
 

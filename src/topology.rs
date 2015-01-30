@@ -155,7 +155,7 @@ fn parse_geometry(object: &Object, space: &Space) -> TopoJsonResult<Feature> {
     geojson_feature.insert("geometry".to_string(), Json::Object(geojson_geometry));
     geojson_feature.insert("properties".to_string(), properties.clone());
     println!("feature: {}", Json::Object(geojson_feature.clone()));
-    return Ok(Feature::from_json(&geojson_feature));
+    return Ok(try!(Feature::from_json(&geojson_feature)));
 }
 
 
