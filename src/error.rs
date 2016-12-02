@@ -1,8 +1,7 @@
 use core::error::FromError;
 use geojson::GeoJsonError;
 
-
-#[derive(Copy)]
+#[derive(Debug, PartialEq, Eq, Copy)]
 pub struct TopoJsonError {
     pub desc: &'static str,
 }
