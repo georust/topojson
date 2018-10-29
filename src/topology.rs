@@ -1,244 +1,484 @@
-use std::collections::BTreeMap;
-use rustc_serialize::json::{Json, ToJson, Object, Array};
-use geojson::{FeatureCollection, Feature};
-use {TopoJsonResult, TopoJsonError};
+// Copyright 2018 The GeoRust Developers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-pub struct Topology(BTreeMap<String, FeatureCollection>);
-// TODO TopoJSON can have any top-level geometry in an object, it
-// doesn't have to be a FeatureCollection (which is spelled
-// GeometryCollection in TopoJSON).
+use json::{Deserialize, Deserializer, JsonObject, Serialize, Serializer};
 
-fn parse_transform(json: &Json) -> TopoJsonResult<(f64, f64, f64, f64)> {
-    let transform = expect_object!(json);
-    let translate = expect_array!(expect_property!(transform, "translate", "Missing 'translate' field"));
-    let scale = expect_array!(expect_property!(transform, "scale", "Missing 'scale' field"));
-    match (translate.len(), scale.len()) {
-        (2, 2) => (),
-        _ => return Err(TopoJsonError::new("Both 'translate' and 'scale' must be two-element arrays"))
-    };
-    let t0 = expect_f64!(translate[0]);
-    let t1 = expect_f64!(translate[1]);
-    let s0 = expect_f64!(scale[0]);
-    let s1 = expect_f64!(scale[1]);
-    return Ok((t0, t1, s0, s1));
+use serde_json;
+
+use {util, Bbox, Error, Arc, NamedGeometry, TopoJson};
+
+/// Transforms
+///
+/// [TopoJSON Format Specification § 2.1.2](https://github.com/topojson/topojson-specification#212-transforms)
+#[derive(Clone, Debug, PartialEq)]
+pub struct TransformParams {
+    pub scale: [f64; 2],
+    pub translate: [f64; 2],
 }
 
-fn map_arc(arc_json: &Array, tr: (f64, f64, f64, f64)) -> TopoJsonResult<Vec<Json>> {
-    let (t0, t1, s0, s1) = tr;
-    let mut arc = vec![];
-    let mut x = 0;
-    let mut y = 0;
-    for point_json in arc_json.iter() {
-        let mut p = expect_array!(point_json).clone();
-        if p.len() < 2 {
-            return Err(TopoJsonError::new("Point must have at least two elements"));
-        }
-        x += expect_i64!(p[0]);
-        y += expect_i64!(p[1]);
-        p[0] = Json::F64((x as f64) * s0 + t0);
-        p[1] = Json::F64((y as f64) * s1 + t1);
-        arc.push(Json::Array(p));
-    }
-    return Ok(arc);
-}
-
-struct Space {
-    arcs: Vec<Vec<Json>>,
-    transform: Option<(f64, f64, f64, f64)>,
-}
-
-impl Space {
-    fn from_topology(topo: &Object) -> TopoJsonResult<Space> {
-        let transform = match topo.get("transform") {
-            Some(transform_json) => Some(try!(parse_transform(transform_json))),
-            None => None
-        };
-        let mut arcs = vec![];
-        for arc_json in expect_array!(expect_property!(topo, "arcs", "Missing 'arcs' field")).iter() {
-            let arc = match transform {
-                Some(tr) => try!(map_arc(expect_array!(arc_json), tr)),
-                None => expect_array!(arc_json).clone()
-            };
-            arcs.push(arc);
-        }
-        return Ok(Space{arcs: arcs, transform: transform});
-    }
-
-    pub fn point(&self, p: &Vec<Json>) -> TopoJsonResult<Vec<Json>> {
-        if p.len() < 2 {
-            return Err(TopoJsonError::new("Point must have at least two elements"));
-        }
-        let mut rv = p.clone();
-        println!("{:?}", self.transform);
-        match self.transform {
-            Some((t0, t1, s0, s1)) => {
-                rv[0] = Json::F64(expect_f64!(rv[0]) * s0 + t0);
-                rv[1] = Json::F64(expect_f64!(rv[1]) * s1 + t1);
-            },
-            None => ()
-        };
-        return Ok(rv);
-    }
-
-    pub fn arc(&self, arc_index: isize) -> TopoJsonResult<Json> {
-        let (inverse, offset) = if arc_index > -1 {
-            (false, arc_index as usize)
-        } else {
-            (true, -1 - arc_index as usize)
-        };
-        if offset >= self.arcs.len() {
-            println!("offset = {}", offset);
-            return Err(TopoJsonError::new("Arc index too large"));
-        }
-        let arc = &self.arcs[offset];
-        let arcs_json = if inverse {
-            arc.iter().rev().map(|p| p.to_json()).collect()
-        } else {
-            arc.iter().map(|p| p.to_json()).collect()
-        };
-        return Ok(Json::Array(arcs_json));
+impl<'a> From<&'a TransformParams> for JsonObject {
+    fn from(transform: &'a TransformParams) -> JsonObject {
+        let mut map = JsonObject::new();
+        map.insert(String::from("scale"), ::serde_json::to_value(&transform.scale).unwrap());
+        map.insert(String::from("translate"), ::serde_json::to_value(&transform.translate).unwrap());
+        map
     }
 }
 
-
-fn transform_coordinates(topo_coord: &Array, space: &Space) -> TopoJsonResult<Json> {
-    return Ok(Json::Array(try!(space.point(topo_coord))));
-}
-
-fn transform_arcs(arcs: &Array, space: &Space, depth: usize) -> TopoJsonResult<Json> {
-    let mut rv = vec![];
-    for arc in arcs.iter() {
-        println!("{:?}", arc);
-        if depth > 1 {
-            rv.push(try!(transform_arcs(expect_array!(arc), space, depth - 1)));
-        }
-        else {
-            rv.push(try!(space.arc(expect_i64!(arc) as isize)));
-        }
+impl TransformParams {
+    pub fn from_json_object(mut object: JsonObject) -> Result<Self, Error> {
+        let scale_translate = util::get_scale_translate(&mut object)?;
+        Ok(scale_translate.unwrap())
     }
-    if depth == 1 {
-        rv = match rv.pop() {
-            Some(Json::Array(v)) => v,
-            _ => return Err(TopoJsonError::new("Empty arc list"))
+}
+
+impl Serialize for TransformParams {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        JsonObject::from(self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for TransformParams {
+    fn deserialize<D>(deserializer: D) -> Result<TransformParams, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::Error as SerdeError;
+        use std::error::Error as StdError;
+
+        let val = JsonObject::deserialize(deserializer)?;
+
+        TransformParams::from_json_object(val).map_err(|e| D::Error::custom(e.description()))
+    }
+}
+
+/// Topology object
+///
+/// [TopoJSON Format Specification § 2.1](https://github.com/topojson/topojson-specification#21-topology-objects)
+#[derive(Clone, Debug, PartialEq)]
+pub struct Topology {
+    pub bbox: Option<Bbox>,
+    pub objects: Vec<NamedGeometry>,
+    pub transform: Option<TransformParams>,
+    pub arcs: Vec<Arc>,
+    // /// Foreign Members
+    // pub foreign_members: Option<JsonObject>,
+}
+
+impl<'a> From<&'a Topology> for JsonObject {
+    fn from(topo: &'a Topology) -> JsonObject {
+        let mut map = JsonObject::new();
+        map.insert(String::from("type"), json!("Topology"));
+        map.insert(String::from("arcs"), serde_json::to_value(&topo.arcs).unwrap());
+
+        let mut objects = JsonObject::new();
+        for named_geom in topo.objects.iter() {
+            objects.insert(named_geom.name.clone(), serde_json::to_value(named_geom.geometry.clone()).unwrap());
         }
+        map.insert(String::from("objects"), serde_json::Value::Object(objects));
+
+        if let Some(ref bbox) = topo.bbox {
+            map.insert(String::from("bbox"), serde_json::to_value(bbox).unwrap());
+        }
+
+        if let Some(ref transform_params) = topo.transform {
+            map.insert(String::from("transform"), serde_json::to_value(transform_params).unwrap());
+        }
+        // if let Some(ref foreign_members) = topo.foreign_members {
+        //     for (key, value) in foreign_members {
+        //         map.insert(key.to_owned(), value.to_owned());
+        //     }
+        // }
+
+        map
     }
-    return Ok(Json::Array(rv));
 }
-
-fn parse_geometry(object: &Object, space: &Space) -> TopoJsonResult<Feature> {
-    let geometry_type = expect_string!(expect_property!(object, "type", "Missing 'type' field"));
-    let properties = expect_property!(object, "properties", "Missing 'properties' field");
-
-    let mut geojson_geometry = BTreeMap::new();
-    geojson_geometry.insert("type".to_string(), Json::String(geometry_type.to_string()));
-    let coordinates = match geometry_type {
-        "Point" => {
-            let topo_coord = expect_property!(object, "coordinates", "Missing 'coordinates' property");
-            try!(transform_coordinates(expect_array!(topo_coord), space))
-        },
-        "LineString" | "Polygon" => {
-            let arcs = expect_property!(object, "arcs", "Missing 'arcs' property");
-            println!("arcs! {:?}", arcs);
-            let depth = match geometry_type {
-                "LineString" => 1,
-                "Polygon" => 2,
-                _ => unreachable!()
-            };
-            try!(transform_arcs(expect_array!(arcs), space, depth))
-        },
-        _ => return Err(TopoJsonError::new("Unknown geometry type"))
-    };
-    geojson_geometry.insert("coordinates".to_string(), coordinates);
-
-    let mut geojson_feature = BTreeMap::new();
-    geojson_feature.insert("type".to_string(), Json::String("Feature".to_string()));
-    geojson_feature.insert("geometry".to_string(), Json::Object(geojson_geometry));
-    geojson_feature.insert("properties".to_string(), properties.clone());
-    println!("feature: {}", Json::Object(geojson_feature.clone()));
-    return Ok(try!(Feature::from_json(&geojson_feature)));
-}
-
-
-fn parse_geometry_collection(object: &Object, space: &Space) -> TopoJsonResult<FeatureCollection> {
-    let geometries = expect_array!(expect_property!(object, "geometries", "Missing 'geometries' field"));
-    let mut features = vec![];
-    for geometry_json in geometries.iter() {
-        features.push(try!(parse_geometry(expect_object!(geometry_json), space)));
-    }
-    return Ok(FeatureCollection{features: features});
-}
-
 
 impl Topology {
-    pub fn from_json(json: &Json) -> TopoJsonResult<Topology> {
-        let topo = expect_object!(json);
-        match expect_property!(topo, "type", "Missing 'type' field").as_string() {
-            Some("Topology") => (),
-            _ => return Err(TopoJsonError::new("'type' should be 'Topology'"))
-        };
-        let space = try!(Space::from_topology(topo));
-        let objects = expect_object!(expect_property!(topo, "objects", "Missing 'objects' field"));
-        let mut map = BTreeMap::new();
-        for (name, value) in objects.iter() {
-            let object = expect_object!(value);
-            let object_type = expect_string!(expect_property!(object, "type", "Missing 'type' field"));
-            let geojson = match object_type {
-                "GeometryCollection" => try!(parse_geometry_collection(object, &space)),
-                _ => return Err(TopoJsonError::new("'type' should be 'GeometryCollection'"))
-            };
-            map.insert(name.to_string(), geojson);
+    pub fn from_json_object(mut object: JsonObject) -> Result<Self, Error> {
+        match util::expect_type(&mut object)? {
+            ref type_ if type_ == "Topology" => Ok(Topology {
+                bbox: util::get_bbox(&mut object)?,
+                objects: util::get_objects(&mut object)?,
+                transform: util::get_scale_translate(&mut object)?,
+                arcs: util::get_arcs_position(&mut object)?
+                // foreign_members: util::get_foreign_members(object)?,
+            }),
+            type_ => Err(Error::ExpectedType {
+                expected: "Topology".to_owned(),
+                actual: type_,
+            }),
         }
-        return Ok(Topology(map));
     }
 
-    pub fn object(&self, name: &str) -> Option<&FeatureCollection> {
-        let &Topology(ref hash) = self;
-        return hash.get(name);
+    pub fn list_names(&self) -> Vec<String> {
+        self.objects
+            .iter()
+            .cloned()
+            .map(|g| g.name)
+            .collect::<Vec<String>>()
     }
 }
 
+impl Serialize for Topology {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        JsonObject::from(self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Topology {
+    fn deserialize<D>(deserializer: D) -> Result<Topology, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::Error as SerdeError;
+        use std::error::Error as StdError;
+
+        let val = JsonObject::deserialize(deserializer)?;
+
+        Topology::from_json_object(val).map_err(|e| D::Error::custom(e.description()))
+    }
+}
+
+impl Into<Option<Topology>> for TopoJson {
+    fn into(self) -> Option<Topology> {
+        match self {
+            TopoJson::Topology(i) => Some(i),
+            _ => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use rustc_serialize::json::{Json, ToJson};
-    use super::Topology;
+    use serde_json;
+    use {TopoJson, Geometry, NamedGeometry, Value, Topology, TransformParams, Error};
+    use json::JsonObject;
+
+    fn encode(topo: &Topology) -> String {
+        serde_json::to_string(&topo).unwrap()
+    }
+
+    fn decode(json_string: String) -> TopoJson {
+        json_string.parse().unwrap()
+    }
 
     #[test]
-    fn test_invalid_topo() {
-        fn expect_err(json: &str) {
-            match Topology::from_json(&Json::from_str(json).unwrap()) {
-                Err(_) => (),
-                _ => panic!()
-            }
+    fn encode_decode_topology_arcs() {
+        let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{},\"type\":\"Topology\"}";
+        let topo = Topology {
+            arcs: vec![
+                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
+            ],
+            objects: vec![],
+            bbox: None,
+            transform: None,
+        };
+
+        // Test encode
+        let json_string = encode(&topo);
+        assert_eq!(json_string, topo_json_str);
+
+        // Test decode
+        let decoded_topo = match decode(json_string) {
+            TopoJson::Topology(t) => t,
+            _ => unreachable!(),
+        };
+        assert_eq!(decoded_topo, topo);
+    }
+
+    #[test]
+    fn decode_invalid_topology_no_objects() {
+        let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"type\":\"Topology\"}";
+
+        // Decode should fail due to the absence of the 'objects' member:
+        let result = topo_json_str.to_string().parse::<TopoJson>();
+        assert!(result.is_err());
+        match result {
+            Err(e) => assert_eq!(e, Error::TopologyExpectedObjects),
+            _ => panic!()
         }
-        expect_err("{}");
-        expect_err(r#"{"type": "foo"}"#);
-        expect_err(r#"{"type": "Topology"}"#);
     }
 
     #[test]
-    fn test_parse_simple_topology_from_spec() {
-        let topo_str = r#"{"type":"Topology","objects":{"example":{"type":"GeometryCollection","geometries":[{"type":"Point","properties":{"prop0":"value0"},"coordinates":[102,0.5]},{"type":"LineString","properties":{"prop0":"value0","prop1":0},"arcs":[0]},{"type":"Polygon","properties":{"prop0":"value0","prop1":{"this":"that"}},"arcs":[[-2]]}]}},"arcs":[[[102,0],[103,1],[104,0],[105,1]],[[100,0],[101,0],[101,1],[100,1],[100,0]]]}"#;
-        let topo_json = Json::from_str(topo_str).unwrap();
-        let topology = match Topology::from_json(&topo_json) {
-            Ok(t) => t,
-            Err(e) => panic!(e.desc)
-        };
-        let example = topology.object("example").unwrap();
-        let geojson = format!("{}", example.to_json());
-        assert_eq!(geojson, r#"{"features":[{"geometry":{"coordinates":[102.0,0.5],"type":"Point"},"properties":{"prop0":"value0"},"type":"Feature"},{"geometry":{"coordinates":[[102.0,0.0],[103.0,1.0],[104.0,0.0],[105.0,1.0]],"type":"LineString"},"properties":{"prop0":"value0","prop1":0},"type":"Feature"},{"geometry":{"coordinates":[[[100.0,0.0],[100.0,1.0],[101.0,1.0],[101.0,0.0],[100.0,0.0]]],"type":"Polygon"},"properties":{"prop0":"value0","prop1":{"this":"that"}},"type":"Feature"}],"type":"FeatureCollection"}"#);
+    fn decode_invalid_topology_no_arcs() {
+        let topo_json_str = "{\"objects\":{},\"type\":\"Topology\"}";
+
+        // Decode should fail due to the absence of the 'objects' member:
+        let result = topo_json_str.to_string().parse::<TopoJson>();
+        assert!(result.is_err());
+        match result {
+            Err(e) => assert_eq!(e, Error::TopologyExpectedArcs),
+            _ => panic!()
+        }
     }
 
     #[test]
-    fn test_parse_quantized_topology_from_spec() {
-        let topo_str = r#"{"objects":{"example":{"type":"GeometryCollection","geometries":[{"type":"Point","properties":{"prop0":"value0"},"coordinates":[4000,5000]},{"type":"LineString","properties":{"prop0":"value0","prop1":0},"arcs":[0]},{"type":"Polygon","properties":{"prop0":"value0","prop1":{"this":"that"}},"arcs":[[1]]}]}},"type":"Topology","transform":{"translate":[100,0],"scale":[0.0005000500050005,0.00010001000100010001]},"arcs":[[[4000,0],[1999,9999],[2000,-9999],[2000,9999]],[[0,0],[0,9999],[2000,0],[0,-9999],[-2000,0]]]}"#;
-        let topo_json = Json::from_str(topo_str).unwrap();
-        let topology = match Topology::from_json(&topo_json) {
-            Ok(t) => t,
-            Err(e) => panic!(e.desc)
+    fn decode_invalid_topology_bad_type() {
+        let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"type\":\"foo\",\"objects\":{\"example\":{\"arcs\":[0],\"type\":\"LineString\"}}}";
+
+        // Decode should fail due to the absence of the 'objects' member:
+        let result = topo_json_str.to_string().parse::<TopoJson>();
+        assert!(result.is_err());
+        match result {
+            Err(e) => assert_eq!(e, Error::TopoJsonUnknownType),
+            _ => panic!()
+        }
+    }
+
+    #[test]
+    fn list_names_objects() {
+        let topo = Topology {
+            arcs: vec![
+                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
+            ],
+            objects: vec![NamedGeometry {
+                name: String::from("example"),
+                geometry: Geometry {
+                    value: Value::LineString(vec![0]),
+                    bbox: None,
+                    id: None,
+                    properties: None,
+                    foreign_members: None,
+                },
+            }],
+            bbox: None,
+            transform: None,
         };
-        let example = topology.object("example").unwrap();
-        let geojson = format!("{}", example.to_json());
-        assert_eq!(geojson, r#"{"features":[{"geometry":{"coordinates":[102.0002,0.50005],"type":"Point"},"properties":{"prop0":"value0"},"type":"Feature"},{"geometry":{"coordinates":[[102.0002,0.0],[102.9998,1.0],[103.9999,0.0],[105.0,1.0]],"type":"LineString"},"properties":{"prop0":"value0","prop1":0},"type":"Feature"},{"geometry":{"coordinates":[[[100.0,0.0],[100.0,1.0],[101.0001,1.0],[101.0001,0.0],[100.0,0.0]]],"type":"Polygon"},"properties":{"prop0":"value0","prop1":{"this":"that"}},"type":"Feature"}],"type":"FeatureCollection"}"#);
+        let names = topo.list_names();
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0], "example");
+    }
+
+    #[test]
+    fn encode_decode_topology_arcs_object() {
+        let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{\"example\":{\"arcs\":[0],\"type\":\"LineString\"}},\"type\":\"Topology\"}";
+        let topo = Topology {
+            arcs: vec![
+                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
+            ],
+            objects: vec![NamedGeometry {
+                name: String::from("example"),
+                geometry: Geometry {
+                    value: Value::LineString(vec![0]),
+                    bbox: None,
+                    id: None,
+                    properties: None,
+                    foreign_members: None,
+                },
+            }],
+            bbox: None,
+            transform: None,
+        };
+
+        // Test encode
+        let json_string = encode(&topo);
+        assert_eq!(json_string, topo_json_str);
+
+        // Test decode
+        let decoded_topo = match decode(json_string) {
+            TopoJson::Topology(t) => t,
+            _ => unreachable!(),
+        };
+        assert_eq!(decoded_topo, topo);
+    }
+    #[test]
+    fn encode_decode_topology_arcs_transform() {
+        let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{},\"transform\":{\"scale\":[0.12,0.12],\"translate\":[1.1,1.1]},\"type\":\"Topology\"}";
+        let topo = Topology {
+            arcs: vec![
+                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
+            ],
+            objects: vec![],
+            bbox: None,
+            transform: Some(TransformParams {
+                scale: [0.12, 0.12],
+                translate: [1.1, 1.1],
+            }),
+        };
+
+        // Test encode
+        let json_string = encode(&topo);
+        assert_eq!(json_string, topo_json_str);
+
+        // Test decode
+        let decoded_topo = match decode(json_string) {
+            TopoJson::Topology(t) => t,
+            _ => unreachable!(),
+        };
+        assert_eq!(decoded_topo, topo);
+    }
+
+
+    #[test]
+    fn encode_decode_topology_arcs_transform_geom_collection() {
+        let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{\"example\":{\"geometries\":[{\"coordinates\":[100.0,0.0],\"properties\":{\"prop1\":1},\"type\":\"Point\"},{\"arcs\":[0],\"type\":\"LineString\"}],\"properties\":{\"prop0\":0},\"type\":\"GeometryCollection\"}},\"transform\":{\"scale\":[0.12,0.12],\"translate\":[1.1,1.1]},\"type\":\"Topology\"}";
+        // Properties for the geometry collection:
+        let mut properties0 = JsonObject::new();
+        properties0.insert(
+            String::from("prop0"),
+            serde_json::to_value(0).unwrap(),
+        );
+        // Properties for one the geometry in the geometry collection:
+        let mut properties1 = JsonObject::new();
+        properties1.insert(
+            String::from("prop1"),
+            serde_json::to_value(1).unwrap(),
+        );
+
+        let topo = Topology {
+            arcs: vec![
+                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
+            ],
+            objects: vec![
+                NamedGeometry {
+                    name: String::from("example"),
+                    geometry: Geometry {
+                        bbox: None,
+                        id: None,
+                        value: Value::GeometryCollection(vec![
+                            Geometry {
+                                bbox: None,
+                                id: None,
+                                value: Value::Point(vec![100.0, 0.0]),
+                                properties: Some(properties1),
+                                foreign_members: None,
+                            },
+                            Geometry {
+                                bbox: None,
+                                id: None,
+                                value: Value::LineString(vec![0]),
+                                properties: None,
+                                foreign_members: None,
+                            },
+                        ]),
+                        properties: Some(properties0),
+                        foreign_members: None,
+                    },
+                },
+            ],
+            bbox: None,
+            transform: Some(TransformParams {
+                scale: [0.12, 0.12],
+                translate: [1.1, 1.1],
+            }),
+        };
+
+        // Test encode
+        let json_string = encode(&topo);
+        assert_eq!(json_string, topo_json_str);
+
+        // Test decode
+        let decoded_topo = match decode(json_string) {
+            TopoJson::Topology(t) => t,
+            _ => unreachable!(),
+        };
+        assert_eq!(decoded_topo, topo);
+    }
+
+    #[test]
+    fn encode_decode_topology_example_quantized_specifications() {
+        let topo_json_str = "{\"arcs\":[[[4000.0,0.0],[1999.0,9999.0],[2000.0,-9999.0],[2000.0,9999.0]],[[0.0,0.0],[0.0,9999.0],[2000.0,0.0],[0.0,-9999.0],[-2000.0,0.0]]],\"objects\":{\"example\":{\"geometries\":[{\"coordinates\":[4000.0,5000.0],\"properties\":{\"prop0\":\"value0\"},\"type\":\"Point\"},{\"arcs\":[0],\"properties\":{\"prop0\":\"value0\",\"prop1\":0},\"type\":\"LineString\"},{\"arcs\":[[1]],\"properties\":{\"prop0\":\"value0\",\"prop1\":{\"this\":\"that\"}},\"type\":\"Polygon\"}],\"type\":\"GeometryCollection\"}},\"transform\":{\"scale\":[0.0005000500050005,0.0001000100010001],\"translate\":[100.0,0.0]},\"type\":\"Topology\"}";
+
+        // Properties for the 1st geometry of the geometry collection:
+        let mut properties0 = JsonObject::new();
+        properties0.insert(
+            String::from("prop0"),
+            serde_json::to_value("value0").unwrap(),
+        );
+        // Properties for the 2nd geometry of the geometry collection:
+        let mut properties1 = properties0.clone();
+        properties1.insert(
+            String::from("prop1"),
+            serde_json::to_value(0).unwrap(),
+        );
+        // Properties for the 3rd geometry of the geometry collection:
+        let mut properties2 = properties0.clone();
+        let mut inner_prop = JsonObject::new();
+        inner_prop.insert(
+            String::from("this"),
+            serde_json::to_value(String::from("that")).unwrap(),
+        );
+        properties2.insert(
+            String::from("prop1"),
+            serde_json::to_value(inner_prop).unwrap(),
+        );
+
+        let topo = Topology {
+            bbox: None,
+            objects: vec![
+                NamedGeometry {
+                    name: String::from("example"),
+                    geometry: Geometry {
+                        bbox: None,
+                        id: None,
+                        value: Value::GeometryCollection(vec![
+                            Geometry {
+                                bbox: None,
+                                id: None,
+                                value: Value::Point(vec![4000.0, 5000.0]),
+                                properties: Some(properties0),
+                                foreign_members: None
+                            },
+                            Geometry {
+                                bbox: None,
+                                id: None,
+                                value: Value::LineString(vec![0]),
+                                properties: Some(properties1),
+                                foreign_members: None
+                            },
+                            Geometry {
+                                bbox: None,
+                                id: None,
+                                value: Value::Polygon(vec![vec![1]]),
+                                properties: Some(properties2),
+                                foreign_members: None
+                            }
+                        ]),
+                        properties: None,
+                        foreign_members: None
+                    }
+                }],
+            transform: Some(TransformParams {
+                scale: [0.0005000500050005, 0.0001000100010001],
+                translate: [100.0, 0.0]
+            }),
+            arcs: vec![
+                vec![
+                    vec![4000.0, 0.0], vec![1999.0, 9999.0],
+                    vec![2000.0, -9999.0], vec![2000.0, 9999.0]],
+                vec![
+                    vec![0.0, 0.0], vec![0.0, 9999.0],
+                    vec![2000.0, 0.0], vec![0.0, -9999.0], vec![-2000.0, 0.0]]
+            ],
+        };
+
+        // Test encode
+        let json_string = encode(&topo);
+        assert_eq!(json_string, topo_json_str);
+
+        // Test decode
+        let decoded_topo = match decode(json_string) {
+            TopoJson::Topology(t) => t,
+            _ => unreachable!(),
+        };
+        assert_eq!(decoded_topo, topo);
     }
 }
