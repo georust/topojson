@@ -144,7 +144,7 @@ pub type Position = Vec<f64>;
 /// It is used here to describe what could also be commonly called an *edge*.
 pub type Arc = Vec<Position>;
 
-/// Arc indexes (and array of indexes)
+/// Arc indexes (an array of indexes)
 ///
 /// [TopoJSON Format Specification $ 2.1.4](https://github.com/topojson/topojson-specification#214-arc-indexes)
 pub type ArcIndexes = Vec<i32>;
