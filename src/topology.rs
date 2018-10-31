@@ -75,8 +75,7 @@ pub struct Topology {
     pub objects: Vec<NamedGeometry>,
     pub transform: Option<TransformParams>,
     pub arcs: Vec<Arc>,
-    // /// Foreign Members
-    // pub foreign_members: Option<JsonObject>,
+    pub foreign_members: Option<JsonObject>,
 }
 
 impl<'a> From<&'a Topology> for JsonObject {
@@ -98,11 +97,11 @@ impl<'a> From<&'a Topology> for JsonObject {
         if let Some(ref transform_params) = topo.transform {
             map.insert(String::from("transform"), serde_json::to_value(transform_params).unwrap());
         }
-        // if let Some(ref foreign_members) = topo.foreign_members {
-        //     for (key, value) in foreign_members {
-        //         map.insert(key.to_owned(), value.to_owned());
-        //     }
-        // }
+        if let Some(ref foreign_members) = topo.foreign_members {
+            for (key, value) in foreign_members {
+                map.insert(key.to_owned(), value.to_owned());
+            }
+        }
 
         map
     }
@@ -115,8 +114,8 @@ impl Topology {
                 bbox: util::get_bbox(&mut object)?,
                 objects: util::get_objects(&mut object)?,
                 transform: util::get_scale_translate(&mut object)?,
-                arcs: util::get_arcs_position(&mut object)?
-                // foreign_members: util::get_foreign_members(object)?,
+                arcs: util::get_arcs_position(&mut object)?,
+                foreign_members: util::get_foreign_members(object)?,
             }),
             type_ => Err(Error::ExpectedType {
                 expected: "Topology".to_owned(),
@@ -190,6 +189,7 @@ mod tests {
             objects: vec![],
             bbox: None,
             transform: None,
+            foreign_members: None,
         };
 
         // Test encode
@@ -261,6 +261,7 @@ mod tests {
             }],
             bbox: None,
             transform: None,
+            foreign_members: None,
         };
         let names = topo.list_names();
         assert_eq!(names.len(), 1);
@@ -286,6 +287,7 @@ mod tests {
             }],
             bbox: None,
             transform: None,
+            foreign_members: None,
         };
 
         // Test encode
@@ -312,6 +314,7 @@ mod tests {
                 scale: [0.12, 0.12],
                 translate: [1.1, 1.1],
             }),
+            foreign_members: None,
         };
 
         // Test encode
@@ -375,6 +378,7 @@ mod tests {
                 },
             ],
             bbox: None,
+            foreign_members: None,
             transform: Some(TransformParams {
                 scale: [0.12, 0.12],
                 translate: [1.1, 1.1],
@@ -468,6 +472,7 @@ mod tests {
                     vec![0.0, 0.0], vec![0.0, 9999.0],
                     vec![2000.0, 0.0], vec![0.0, -9999.0], vec![-2000.0, 0.0]]
             ],
+            foreign_members: None,
         };
 
         // Test encode

@@ -196,7 +196,7 @@ pub fn to_geojson(topo: &Topology, key: &str) -> Result<FeatureCollection, Error
 }
 #[cfg(test)]
 mod tests {
-    use {TopoJson, Topology, to_geojson, Error};
+    use {TopoJson, to_geojson, Error};
     use geojson::GeoJson;
 
     fn decode(json_string: &str) -> TopoJson {
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn convert_fails_unknown_key() {
         let topo = decode("{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{\"example\":{\"arcs\":[0],\"type\":\"LineString\"}},\"type\":\"Topology\"}");
-        let result = to_geojson(&Into::<Option<Topology>>::into(topo).unwrap(), "foo");
+        let result = to_geojson(&topo.try_unwrap_topology().unwrap(), "foo");
 
         assert!(result.is_err());
         match result {

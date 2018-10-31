@@ -14,7 +14,7 @@
 
 use json::{Deserialize, Deserializer, JsonObject, JsonValue, Serialize, Serializer};
 
-use {util, Bbox, Error, Position, ArcIndexes, TopoJson};
+use {util, Bbox, Error, Position, ArcIndexes, topojson::Type};
 
 /// The underlying Geometry value (which may contain Position or Arc indexes)
 #[derive(Clone, Debug, PartialEq)]
@@ -55,9 +55,9 @@ pub enum Value {
     GeometryCollection(Vec<Geometry>),
 }
 
-impl<'a> From<&'a Value> for JsonValue {
-    fn from(value: &'a Value) -> JsonValue {
-        match *value {
+impl Value {
+    pub fn to_json_value(&self) -> JsonValue {
+        match *self {
             Value::Point(ref x) => ::serde_json::to_value(x),
             Value::MultiPoint(ref x) => ::serde_json::to_value(x),
             Value::LineString(ref x) => ::serde_json::to_value(x),
@@ -67,6 +67,7 @@ impl<'a> From<&'a Value> for JsonValue {
             Value::GeometryCollection(ref x) => ::serde_json::to_value(x),
         }
         .unwrap()
+
     }
 }
 
@@ -75,7 +76,8 @@ impl Serialize for Value {
     where
         S: Serializer,
     {
-        JsonValue::from(self).serialize(serializer)
+        // FIXME: We should try to serialize it more efficiently
+        self.to_json_value().serialize(serializer)
     }
 }
 
@@ -161,14 +163,14 @@ impl<'a> From<&'a Geometry> for JsonObject {
 
 impl Geometry {
     pub fn from_json_object(mut object: JsonObject) -> Result<Self, Error> {
-        let value = match &*util::expect_type(&mut object)? {
-            "Point" => Value::Point(util::get_coords_one_pos(&mut object)?),
-            "MultiPoint" => Value::MultiPoint(util::get_coords_1d_pos(&mut object)?),
-            "LineString" => Value::LineString(util::get_arc_ix(&mut object)?),
-            "MultiLineString" => Value::MultiLineString(util::get_arc_ix_1d(&mut object)?),
-            "Polygon" => Value::Polygon(util::get_arc_ix_1d(&mut object)?),
-            "MultiPolygon" => Value::MultiPolygon(util::get_arc_ix_2d(&mut object)?),
-            "GeometryCollection" => Value::GeometryCollection(util::get_geometries(&mut object)?),
+        let value = match &Type::from_str(&util::expect_type(&mut object)?).ok_or(Error::TopoJsonUnknownType)? {
+            Type::Point => Value::Point(util::get_coords_one_pos(&mut object)?),
+            Type::MultiPoint => Value::MultiPoint(util::get_coords_1d_pos(&mut object)?),
+            Type::LineString => Value::LineString(util::get_arc_ix(&mut object)?),
+            Type::MultiLineString => Value::MultiLineString(util::get_arc_ix_1d(&mut object)?),
+            Type::Polygon => Value::Polygon(util::get_arc_ix_1d(&mut object)?),
+            Type::MultiPolygon => Value::MultiPolygon(util::get_arc_ix_2d(&mut object)?),
+            Type::GeometryCollection => Value::GeometryCollection(util::get_geometries(&mut object)?),
             _ => return Err(Error::GeometryUnknownType),
         };
         Ok(Geometry {
@@ -186,6 +188,7 @@ impl Serialize for Geometry {
     where
         S: Serializer,
     {
+        // FIXME: We should try to serialize it more efficiently
         JsonObject::from(self).serialize(serializer)
     }
 }
@@ -201,15 +204,6 @@ impl<'de> Deserialize<'de> for Geometry {
         let val = JsonObject::deserialize(deserializer)?;
 
         Geometry::from_json_object(val).map_err(|e| D::Error::custom(e.description()))
-    }
-}
-
-impl Into<Option<Geometry>> for TopoJson {
-    fn into(self) -> Option<Geometry> {
-        match self {
-            TopoJson::Geometry(i) => Some(i),
-            _ => None,
-        }
     }
 }
 

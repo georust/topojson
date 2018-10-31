@@ -69,10 +69,24 @@ impl TopoJson {
             Type::Topology => Topology::from_json_object(object).map(TopoJson::Topology),
         }
     }
+
+    pub fn try_unwrap_geometry(self) -> Option<Geometry> {
+        match self {
+            TopoJson::Geometry(i) => Some(i),
+            _ => None,
+        }
+    }
+
+    pub fn try_unwrap_topology(self) -> Option<Topology> {
+        match self {
+            TopoJson::Topology(i) => Some(i),
+            _ => None,
+        }
+    }
 }
 
 #[derive(PartialEq, Clone, Copy)]
-enum Type {
+pub(crate) enum Type {
     Point,
     MultiPoint,
     LineString,
@@ -84,7 +98,7 @@ enum Type {
 }
 
 impl Type {
-    fn from_str(s: &str) -> Option<Self> {
+    pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "Point" => Some(Type::Point),
             "MultiPoint" => Some(Type::MultiPoint),

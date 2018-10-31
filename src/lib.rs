@@ -79,6 +79,7 @@
 //!     }],
 //!     bbox: None,
 //!     transform: None,
+//!     foreign_members: None,
 //! };
 //!
 //! let topojson_string = serde_json::to_string(&topo).unwrap();
@@ -137,6 +138,10 @@ pub type Position = Vec<f64>;
 /// Arcs (an array of position which may have been quantized and delta-encoded)
 ///
 /// [TopoJSON Format Specification $ 2.1.3](https://github.com/topojson/topojson-specification#213-arcs)
+///
+/// Warning: This has a completely different meaning from the
+/// [`Arc`](https://doc.rust-lang.org/std/sync/struct.Arc.html) term in the standard library.
+/// It is used here to describe what could also be commonly called an *edge*.
 pub type Arc = Vec<Position>;
 
 /// Arc indexes (and array of indexes)
@@ -144,7 +149,7 @@ pub type Arc = Vec<Position>;
 /// [TopoJSON Format Specification $ 2.1.4](https://github.com/topojson/topojson-specification#214-arc-indexes)
 pub type ArcIndexes = Vec<i32>;
 
-mod util;
+pub(crate) mod util;
 
 mod topojson;
 pub use topojson::TopoJson;
