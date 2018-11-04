@@ -17,13 +17,7 @@ use { Error, Arc, Topology, Position, NamedGeometry, TransformParams, Geometry, 
 
 fn decode_arc(arc: &[Position], tr: &Option<TransformParams>) -> Vec<Position> {
     match tr {
-        None => {
-            let mut ring = Vec::with_capacity(arc.len());
-            for pt in arc {
-                ring.push(pt.clone());
-            }
-            ring
-        },
+        None => arc.to_vec(),
         Some(_tr) => {
             let (t0, t1, s0, s1) = (_tr.translate[0], _tr.translate[1], _tr.scale[0], _tr.scale[1]);
             let mut ring = Vec::with_capacity(arc.len());
@@ -41,11 +35,11 @@ fn decode_arc(arc: &[Position], tr: &Option<TransformParams>) -> Vec<Position> {
     }
 }
 
-fn make_pt(pos: &Vec<f64>, tr: &Option<TransformParams>) -> Vec<f64> {
+fn make_pt(pos: &[f64], tr: &Option<TransformParams>) -> Vec<f64> {
     match tr {
-        None => pos.clone(),
+        None => pos.to_vec(),
         Some(_tr) => {
-            let mut new_pos = pos.clone();
+            let mut new_pos = pos.to_vec();
             new_pos[0] = new_pos[0] * _tr.scale[0] + _tr.translate[0];
             new_pos[1] = new_pos[1] * _tr.scale[1] + _tr.translate[1];
             new_pos
