@@ -40,6 +40,8 @@ pub enum Error {
     ExpectedF64Value,
     ExpectedArrayValue,
     ExpectedObjectValue,
+    #[doc(hidden)]
+    __Nonexhaustive,
 }
 
 impl std::fmt::Display for Error {
@@ -123,6 +125,7 @@ impl std::fmt::Display for Error {
             Error::Expectedi32Value => write!(f, "Expected a positive integer."),
             Error::ExpectedArrayValue => write!(f, "Expected an array."),
             Error::ExpectedObjectValue => write!(f, "Expected an object."),
+            Error::__Nonexhaustive => unreachable!(),
         }
     }
 }
@@ -152,6 +155,7 @@ impl std::error::Error for Error {
             Error::Expectedi32Value => "expected a positive integer",
             Error::ExpectedArrayValue => "expected an array",
             Error::ExpectedObjectValue => "expected an object",
+            Error::__Nonexhaustive => unreachable!(),
         }
     }
 }
