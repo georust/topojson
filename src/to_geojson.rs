@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate log;
+
 use geojson::feature::Id as FeatureId;
 use geojson::{Feature, FeatureCollection, Geometry as GeoJsonGeometry, Value as GeoJsonGeomValue};
 use json::JsonValue;
@@ -53,8 +55,10 @@ fn make_feature_id(id: Option<JsonValue>) -> Option<FeatureId> {
     match id {
         Some(JsonValue::Number(i)) => Some(FeatureId::Number(i)),
         Some(JsonValue::String(i)) => Some(FeatureId::String(i)),
-        Some(i) => Some(FeatureId::String(String::from(i.as_str().unwrap()))),
-        None => None,
+        _ => {
+            log::warn!("Ignoring feature id property because of invalid type");
+            None
+        }
     }
 }
 
