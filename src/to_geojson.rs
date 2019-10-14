@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate log;
+
+use geojson::feature::Id as FeatureId;
 use geojson::{Feature, FeatureCollection, Geometry as GeoJsonGeometry, Value as GeoJsonGeomValue};
+use json::JsonValue;
 use { Error, Arc, Topology, Position, NamedGeometry, TransformParams, Geometry, Value as TopoJsonGeomValue };
 
 fn decode_arc(arc: &[Position], tr: &Option<TransformParams>) -> Vec<Position> {
@@ -47,6 +51,17 @@ fn make_pt(pos: &[f64], tr: &Option<TransformParams>) -> Vec<f64> {
     }
 }
 
+fn make_feature_id(id: Option<JsonValue>) -> Option<FeatureId> {
+    match id {
+        Some(JsonValue::Number(i)) => Some(FeatureId::Number(i)),
+        Some(JsonValue::String(i)) => Some(FeatureId::String(i)),
+        _ => {
+            log::warn!("Ignoring feature id property because of invalid type");
+            None
+        }
+    }
+}
+
 pub fn convert_geom_coords(geom: &Geometry, tr: &Option<TransformParams>) -> Result<Feature, Error> {
     let geoj_geom_value = match &geom.value {
         TopoJsonGeomValue::Point(ref pos) => GeoJsonGeomValue::Point(make_pt(&pos, tr)),
@@ -64,7 +79,7 @@ pub fn convert_geom_coords(geom: &Geometry, tr: &Option<TransformParams>) -> Res
             foreign_members: None,
             value: geoj_geom_value,
         }),
-        id: geom.id.clone(),
+        id: make_feature_id(geom.id.clone()),
         properties: geom.properties.clone()
     })
 }
@@ -123,7 +138,7 @@ pub fn convert_geom_arcs(geom: &Geometry, arcs: &[Arc], tr: &Option<TransformPar
         }),
         bbox: geom.bbox.clone(),
         foreign_members: geom.foreign_members.clone(),
-        id: geom.id.clone(),
+        id: make_feature_id(geom.id.clone()),
         properties: geom.properties.clone()
     })
 }
