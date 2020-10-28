@@ -14,7 +14,7 @@
 
 use json::{Deserialize, Deserializer, JsonObject, JsonValue, Serialize, Serializer};
 
-use {util, Bbox, Error, Position, ArcIndexes, topojson::Type};
+use {topojson::Type, util, ArcIndexes, Bbox, Error, Position};
 
 /// The underlying Geometry value (which may contain Position or Arc indexes)
 #[derive(Clone, Debug, PartialEq)]
@@ -67,7 +67,6 @@ impl Value {
             Value::GeometryCollection(ref x) => ::serde_json::to_value(x),
         }
         .unwrap()
-
     }
 }
 
@@ -150,7 +149,10 @@ impl<'a> From<&'a Geometry> for JsonObject {
             for (key, value) in properties {
                 prop.insert(key.to_owned(), value.to_owned());
             }
-            map.insert(String::from("properties"), ::serde_json::Value::Object(prop));
+            map.insert(
+                String::from("properties"),
+                ::serde_json::Value::Object(prop),
+            );
         }
         if let Some(ref foreign_members) = geometry.foreign_members {
             for (key, value) in foreign_members {
@@ -163,14 +165,18 @@ impl<'a> From<&'a Geometry> for JsonObject {
 
 impl Geometry {
     pub fn from_json_object(mut object: JsonObject) -> Result<Self, Error> {
-        let value = match &Type::from_str(&util::expect_type(&mut object)?).ok_or(Error::TopoJsonUnknownType)? {
+        let value = match &Type::from_str(&util::expect_type(&mut object)?)
+            .ok_or(Error::TopoJsonUnknownType)?
+        {
             Type::Point => Value::Point(util::get_coords_one_pos(&mut object)?),
             Type::MultiPoint => Value::MultiPoint(util::get_coords_1d_pos(&mut object)?),
             Type::LineString => Value::LineString(util::get_arc_ix(&mut object)?),
             Type::MultiLineString => Value::MultiLineString(util::get_arc_ix_1d(&mut object)?),
             Type::Polygon => Value::Polygon(util::get_arc_ix_1d(&mut object)?),
             Type::MultiPolygon => Value::MultiPolygon(util::get_arc_ix_2d(&mut object)?),
-            Type::GeometryCollection => Value::GeometryCollection(util::get_geometries(&mut object)?),
+            Type::GeometryCollection => {
+                Value::GeometryCollection(util::get_geometries(&mut object)?)
+            }
             _ => return Err(Error::GeometryUnknownType),
         };
         Ok(Geometry {
@@ -199,11 +205,10 @@ impl<'de> Deserialize<'de> for Geometry {
         D: Deserializer<'de>,
     {
         use serde::de::Error as SerdeError;
-        use std::error::Error as StdError;
 
         let val = JsonObject::deserialize(deserializer)?;
 
-        Geometry::from_json_object(val).map_err(|e| D::Error::custom(e.description()))
+        Geometry::from_json_object(val).map_err(|e| D::Error::custom(e.to_string()))
     }
 }
 
@@ -216,12 +221,11 @@ pub struct NamedGeometry {
     pub geometry: Geometry,
 }
 
-
 #[cfg(test)]
 mod tests {
     use json::JsonObject;
     use serde_json;
-    use {TopoJson, Geometry, Value, Error};
+    use {Error, Geometry, TopoJson, Value};
 
     fn encode(geometry: &Geometry) -> String {
         serde_json::to_string(&geometry).unwrap()
@@ -240,7 +244,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(e) => assert_eq!(e, Error::ExpectedProperty(String::from("arcs"))),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -269,8 +273,7 @@ mod tests {
 
     #[test]
     fn encode_decode_geometry_with_arc_indexes_polygon() {
-        let geometry_json_str =
-            "{\"arcs\":[[1]],\"type\":\"Polygon\"}";
+        let geometry_json_str = "{\"arcs\":[[1]],\"type\":\"Polygon\"}";
         let geometry = Geometry {
             value: Value::Polygon(vec![vec![1]]),
             bbox: None,
@@ -295,8 +298,7 @@ mod tests {
     fn encode_decode_geometry_with_arc_indexes_linestring() {
         // let geometry_json_str =
         //     "{\"type\": \"Polygon\", \"properties\": {\"prop0": \"value0\",\"prop1\": {\"this\": \"that\"}},\"arcs\": [[1]]}";
-        let geometry_json_str =
-            "{\"arcs\":[0],\"type\":\"LineString\"}";
+        let geometry_json_str = "{\"arcs\":[0],\"type\":\"LineString\"}";
         let geometry = Geometry {
             value: Value::LineString(vec![0]),
             bbox: None,
@@ -316,7 +318,6 @@ mod tests {
         };
         assert_eq!(decoded_geometry, geometry);
     }
-
 
     #[test]
     fn encode_decode_geometry_with_foreign_member() {
@@ -352,10 +353,7 @@ mod tests {
         let geometry_json_str =
             "{\"coordinates\":[1.1,2.1],\"properties\":{\"prop0\":0},\"type\":\"Point\"}";
         let mut properties = JsonObject::new();
-        properties.insert(
-            String::from("prop0"),
-            serde_json::to_value(0).unwrap(),
-        );
+        properties.insert(String::from("prop0"), serde_json::to_value(0).unwrap());
         let geometry = Geometry {
             value: Value::Point(vec![1.1, 2.1]),
             bbox: None,
@@ -380,16 +378,10 @@ mod tests {
     fn encode_decode_geometry_collection() {
         // Properties for the geometry collection:
         let mut properties0 = JsonObject::new();
-        properties0.insert(
-            String::from("prop0"),
-            serde_json::to_value(0).unwrap(),
-        );
+        properties0.insert(String::from("prop0"), serde_json::to_value(0).unwrap());
         // Properties for one the geometry in the geometry collection:
         let mut properties1 = JsonObject::new();
-        properties1.insert(
-            String::from("prop1"),
-            serde_json::to_value(1).unwrap(),
-        );
+        properties1.insert(String::from("prop1"), serde_json::to_value(1).unwrap());
         let geometry_collection = Geometry {
             bbox: None,
             id: None,

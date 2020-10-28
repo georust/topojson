@@ -16,8 +16,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use json::{self, Deserialize, Deserializer, JsonObject, Serialize, Serializer};
-use { Error, Geometry, Topology };
-
+use {Error, Geometry, Topology};
 
 /// TopoJSON Objects (either Topology or Geometry)
 ///
@@ -65,7 +64,9 @@ impl TopoJson {
             | Type::MultiLineString
             | Type::Polygon
             | Type::MultiPolygon
-            | Type::GeometryCollection => Geometry::from_json_object(object).map(TopoJson::Geometry),
+            | Type::GeometryCollection => {
+                Geometry::from_json_object(object).map(TopoJson::Geometry)
+            }
             Type::Topology => Topology::from_json_object(object).map(TopoJson::Topology),
         }
     }
@@ -128,11 +129,10 @@ impl<'de> Deserialize<'de> for TopoJson {
         D: Deserializer<'de>,
     {
         use serde::de::Error as SerdeError;
-        use std::error::Error as StdError;
 
         let val = JsonObject::deserialize(deserializer)?;
 
-        TopoJson::from_json_object(val).map_err(|e| D::Error::custom(e.description()))
+        TopoJson::from_json_object(val).map_err(D::Error::custom)
     }
 }
 
