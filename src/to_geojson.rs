@@ -17,13 +17,21 @@ extern crate log;
 use geojson::feature::Id as FeatureId;
 use geojson::{Feature, FeatureCollection, Geometry as GeoJsonGeometry, Value as GeoJsonGeomValue};
 use json::JsonValue;
-use { Error, Arc, Topology, Position, NamedGeometry, TransformParams, Geometry, Value as TopoJsonGeomValue };
+use {
+    Arc, Error, Geometry, NamedGeometry, Position, Topology, TransformParams,
+    Value as TopoJsonGeomValue,
+};
 
 fn decode_arc(arc: &[Position], tr: &Option<TransformParams>) -> Vec<Position> {
     match tr {
         None => arc.to_vec(),
         Some(_tr) => {
-            let (t0, t1, s0, s1) = (_tr.translate[0], _tr.translate[1], _tr.scale[0], _tr.scale[1]);
+            let (t0, t1, s0, s1) = (
+                _tr.translate[0],
+                _tr.translate[1],
+                _tr.scale[0],
+                _tr.scale[1],
+            );
             let mut ring = Vec::with_capacity(arc.len());
             let (mut x, mut y) = (0., 0.);
             for pt in arc {
@@ -62,13 +70,15 @@ fn make_feature_id(id: Option<JsonValue>) -> Option<FeatureId> {
     }
 }
 
-pub fn convert_geom_coords(geom: &Geometry, tr: &Option<TransformParams>) -> Result<Feature, Error> {
+pub fn convert_geom_coords(
+    geom: &Geometry,
+    tr: &Option<TransformParams>,
+) -> Result<Feature, Error> {
     let geoj_geom_value = match &geom.value {
         TopoJsonGeomValue::Point(ref pos) => GeoJsonGeomValue::Point(make_pt(&pos, tr)),
-        TopoJsonGeomValue::MultiPoint(positions) => GeoJsonGeomValue::MultiPoint(
-            positions.iter()
-                .map(|pos| make_pt(&pos, tr))
-                .collect()),
+        TopoJsonGeomValue::MultiPoint(positions) => {
+            GeoJsonGeomValue::MultiPoint(positions.iter().map(|pos| make_pt(&pos, tr)).collect())
+        }
         _ => unreachable!(),
     };
     Ok(Feature {
@@ -80,14 +90,14 @@ pub fn convert_geom_coords(geom: &Geometry, tr: &Option<TransformParams>) -> Res
             value: geoj_geom_value,
         }),
         id: make_feature_id(geom.id.clone()),
-        properties: geom.properties.clone()
+        properties: geom.properties.clone(),
     })
 }
 
 pub fn make_ring(arcs: &[Arc], ixs: &[i32], tr: &Option<TransformParams>) -> Vec<Position> {
     let mut result_line = Vec::with_capacity(ixs.len());
     for _ix in ixs {
-        let mut ix;
+        let ix;
         let revert;
         if *_ix < 0 {
             revert = true;
@@ -98,39 +108,50 @@ pub fn make_ring(arcs: &[Arc], ixs: &[i32], tr: &Option<TransformParams>) -> Vec
         }
         let line_arc = &arcs[ix];
         let mut line = decode_arc(&line_arc, &tr);
-        if revert { line.reverse(); }
+        if revert {
+            line.reverse();
+        }
         result_line.append(&mut line);
     }
     result_line
 }
 
-pub fn convert_geom_arcs(geom: &Geometry, arcs: &[Arc], tr: &Option<TransformParams>) -> Result<Feature, Error> {
+pub fn convert_geom_arcs(
+    geom: &Geometry,
+    arcs: &[Arc],
+    tr: &Option<TransformParams>,
+) -> Result<Feature, Error> {
     let geom_value = match &geom.value {
         TopoJsonGeomValue::LineString(ref arc_indexes) => {
             GeoJsonGeomValue::LineString(make_ring(&arcs, arc_indexes, &tr))
-        },
-        TopoJsonGeomValue::MultiLineString(arc_indexes) => {
-            GeoJsonGeomValue::MultiLineString(arc_indexes.iter()
+        }
+        TopoJsonGeomValue::MultiLineString(arc_indexes) => GeoJsonGeomValue::MultiLineString(
+            arc_indexes
+                .iter()
                 .map(|ixs| make_ring(&arcs, ixs, &tr))
-                .collect())
-        },
-        TopoJsonGeomValue::Polygon(arc_indexes) => {
-            GeoJsonGeomValue::Polygon(arc_indexes.iter()
+                .collect(),
+        ),
+        TopoJsonGeomValue::Polygon(arc_indexes) => GeoJsonGeomValue::Polygon(
+            arc_indexes
+                .iter()
                 .map(|ixs| make_ring(&arcs, ixs, &tr))
-                .collect())
-        },
+                .collect(),
+        ),
         TopoJsonGeomValue::MultiPolygon(arcs_indexes) => {
             let mut polygons = Vec::with_capacity(arcs_indexes.len());
             for _arc_indexes_poly in arcs_indexes {
-                polygons.push(_arc_indexes_poly.iter()
-                    .map(|ixs| make_ring(&arcs, ixs, &tr))
-                    .collect());
+                polygons.push(
+                    _arc_indexes_poly
+                        .iter()
+                        .map(|ixs| make_ring(&arcs, ixs, &tr))
+                        .collect(),
+                );
             }
             GeoJsonGeomValue::MultiPolygon(polygons)
-        },
+        }
         _ => unreachable!(),
     };
-    Ok(Feature{
+    Ok(Feature {
         geometry: Some(GeoJsonGeometry {
             value: geom_value,
             bbox: None,
@@ -139,11 +160,15 @@ pub fn convert_geom_arcs(geom: &Geometry, arcs: &[Arc], tr: &Option<TransformPar
         bbox: geom.bbox.clone(),
         foreign_members: geom.foreign_members.clone(),
         id: make_feature_id(geom.id.clone()),
-        properties: geom.properties.clone()
+        properties: geom.properties.clone(),
     })
 }
 
-pub fn convert_geometry_collection(geom: &Geometry, arcs: &[Arc], tr: &Option<TransformParams>) -> Result<Vec<Feature>, Error> {
+pub fn convert_geometry_collection(
+    geom: &Geometry,
+    arcs: &[Arc],
+    tr: &Option<TransformParams>,
+) -> Result<Vec<Feature>, Error> {
     let features = match geom.value {
         TopoJsonGeomValue::GeometryCollection(ref geoms) => {
             let mut features = Vec::with_capacity(geoms.len());
@@ -151,11 +176,13 @@ pub fn convert_geometry_collection(geom: &Geometry, arcs: &[Arc], tr: &Option<Tr
                 match &g.value {
                     TopoJsonGeomValue::Point(..) | TopoJsonGeomValue::MultiPoint(..) => {
                         features.push(convert_geom_coords(&g, &tr)?);
-                    },
-                    TopoJsonGeomValue::LineString(..) | TopoJsonGeomValue::MultiLineString(..)
-                    | TopoJsonGeomValue::Polygon(..) | TopoJsonGeomValue::MultiPolygon(..) => {
+                    }
+                    TopoJsonGeomValue::LineString(..)
+                    | TopoJsonGeomValue::MultiLineString(..)
+                    | TopoJsonGeomValue::Polygon(..)
+                    | TopoJsonGeomValue::MultiPolygon(..) => {
                         features.push(convert_geom_arcs(&g, &arcs, &tr)?);
-                    },
+                    }
                     // According to https://github.com/topojson/topojson-client#feature
                     // a geometry collection of geometry collections should be mapped to
                     // a feature collection of features, each with a geometry collection.
@@ -163,7 +190,7 @@ pub fn convert_geometry_collection(geom: &Geometry, arcs: &[Arc], tr: &Option<Tr
                 }
             }
             features
-        },
+        }
         _ => unreachable!(),
     };
     Ok(features)
@@ -174,39 +201,39 @@ pub fn convert_geometry_collection(geom: &Geometry, arcs: &[Arc], tr: &Option<Tr
 /// (in a similar way than [topojson.feature](https://github.com/topojson/topojson-client#feature) function
 /// or [topo2geo](https://github.com/topojson/topojson-client#topo2geo) CLI tool)
 pub fn to_geojson(topo: &Topology, key: &str) -> Result<FeatureCollection, Error> {
-    let objs: Vec<&NamedGeometry> = topo.objects
-        .iter()
-        .filter(|ng| ng.name == key)
-        .collect();
+    let objs: Vec<&NamedGeometry> = topo.objects.iter().filter(|ng| ng.name == key).collect();
     let features = match objs.len() {
         0 => return Err(Error::TopoToGeoUnknownKey(key.to_owned())),
-        1 => {
-            match &objs[0].geometry.value {
-                TopoJsonGeomValue::Point(..) | TopoJsonGeomValue::MultiPoint(..) => {
-                    vec![convert_geom_coords(&objs[0].geometry, &topo.transform)?]
-                },
-                TopoJsonGeomValue::LineString(..) | TopoJsonGeomValue::MultiLineString(..)
-                | TopoJsonGeomValue::Polygon(..) | TopoJsonGeomValue::MultiPolygon(..) => {
-                    vec![convert_geom_arcs(&objs[0].geometry, &topo.arcs, &topo.transform)?]
-                },
-                | TopoJsonGeomValue::GeometryCollection(..) => {
-                    convert_geometry_collection(&objs[0].geometry, &topo.arcs, &topo.transform)?
-                }
+        1 => match &objs[0].geometry.value {
+            TopoJsonGeomValue::Point(..) | TopoJsonGeomValue::MultiPoint(..) => {
+                vec![convert_geom_coords(&objs[0].geometry, &topo.transform)?]
+            }
+            TopoJsonGeomValue::LineString(..)
+            | TopoJsonGeomValue::MultiLineString(..)
+            | TopoJsonGeomValue::Polygon(..)
+            | TopoJsonGeomValue::MultiPolygon(..) => vec![convert_geom_arcs(
+                &objs[0].geometry,
+                &topo.arcs,
+                &topo.transform,
+            )?],
+            TopoJsonGeomValue::GeometryCollection(..) => {
+                convert_geometry_collection(&objs[0].geometry, &topo.arcs, &topo.transform)?
             }
         },
         _ => unreachable!(),
     };
 
     Ok(FeatureCollection {
-        features: features,
+        features,
         bbox: None,
         foreign_members: None,
     })
 }
+
 #[cfg(test)]
 mod tests {
-    use {TopoJson, to_geojson, Error};
     use geojson::GeoJson;
+    use {to_geojson, Error, TopoJson};
 
     fn decode(json_string: &str) -> TopoJson {
         json_string.parse().unwrap()
@@ -220,7 +247,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(e) => assert_eq!(e, Error::TopoToGeoUnknownKey("foo".to_string())),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -234,7 +261,8 @@ mod tests {
             _ => unreachable!(),
         };
 
-        let geojson_obj = to_geojson(&decoded_topo, "example").expect("Unable to convert to GeoJson");
+        let geojson_obj =
+            to_geojson(&decoded_topo, "example").expect("Unable to convert to GeoJson");
         let geojson_string = GeoJson::FeatureCollection(geojson_obj).to_string();
 
         // The expected result was obtained using [topo2geo CLI tool](https://github.com/topojson/topojson-client#command-line-reference)

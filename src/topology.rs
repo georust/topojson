@@ -16,7 +16,7 @@ use json::{Deserialize, Deserializer, JsonObject, Serialize, Serializer};
 
 use serde_json;
 
-use {util, Bbox, Error, Arc, NamedGeometry, TopoJson};
+use {util, Arc, Bbox, Error, NamedGeometry, TopoJson};
 
 /// Transforms
 ///
@@ -30,8 +30,14 @@ pub struct TransformParams {
 impl<'a> From<&'a TransformParams> for JsonObject {
     fn from(transform: &'a TransformParams) -> JsonObject {
         let mut map = JsonObject::new();
-        map.insert(String::from("scale"), ::serde_json::to_value(&transform.scale).unwrap());
-        map.insert(String::from("translate"), ::serde_json::to_value(&transform.translate).unwrap());
+        map.insert(
+            String::from("scale"),
+            ::serde_json::to_value(&transform.scale).unwrap(),
+        );
+        map.insert(
+            String::from("translate"),
+            ::serde_json::to_value(&transform.translate).unwrap(),
+        );
         map
     }
 }
@@ -58,11 +64,10 @@ impl<'de> Deserialize<'de> for TransformParams {
         D: Deserializer<'de>,
     {
         use serde::de::Error as SerdeError;
-        use std::error::Error as StdError;
 
         let val = JsonObject::deserialize(deserializer)?;
 
-        TransformParams::from_json_object(val).map_err(|e| D::Error::custom(e.description()))
+        TransformParams::from_json_object(val).map_err(D::Error::custom)
     }
 }
 
@@ -82,11 +87,17 @@ impl<'a> From<&'a Topology> for JsonObject {
     fn from(topo: &'a Topology) -> JsonObject {
         let mut map = JsonObject::new();
         map.insert(String::from("type"), json!("Topology"));
-        map.insert(String::from("arcs"), serde_json::to_value(&topo.arcs).unwrap());
+        map.insert(
+            String::from("arcs"),
+            serde_json::to_value(&topo.arcs).unwrap(),
+        );
 
         let mut objects = JsonObject::new();
         for named_geom in topo.objects.iter() {
-            objects.insert(named_geom.name.clone(), serde_json::to_value(named_geom.geometry.clone()).unwrap());
+            objects.insert(
+                named_geom.name.clone(),
+                serde_json::to_value(named_geom.geometry.clone()).unwrap(),
+            );
         }
         map.insert(String::from("objects"), serde_json::Value::Object(objects));
 
@@ -95,7 +106,10 @@ impl<'a> From<&'a Topology> for JsonObject {
         }
 
         if let Some(ref transform_params) = topo.transform {
-            map.insert(String::from("transform"), serde_json::to_value(transform_params).unwrap());
+            map.insert(
+                String::from("transform"),
+                serde_json::to_value(transform_params).unwrap(),
+            );
         }
         if let Some(ref foreign_members) = topo.foreign_members {
             for (key, value) in foreign_members {
@@ -148,11 +162,10 @@ impl<'de> Deserialize<'de> for Topology {
         D: Deserializer<'de>,
     {
         use serde::de::Error as SerdeError;
-        use std::error::Error as StdError;
 
         let val = JsonObject::deserialize(deserializer)?;
 
-        Topology::from_json_object(val).map_err(|e| D::Error::custom(e.description()))
+        Topology::from_json_object(val).map_err(D::Error::custom)
     }
 }
 
@@ -167,9 +180,9 @@ impl Into<Option<Topology>> for TopoJson {
 
 #[cfg(test)]
 mod tests {
-    use serde_json;
-    use {TopoJson, Geometry, NamedGeometry, Value, Topology, TransformParams, Error};
     use json::JsonObject;
+    use serde_json;
+    use {Error, Geometry, NamedGeometry, TopoJson, Topology, TransformParams, Value};
 
     fn encode(topo: &Topology) -> String {
         serde_json::to_string(&topo).unwrap()
@@ -181,11 +194,10 @@ mod tests {
 
     #[test]
     fn encode_decode_topology_arcs() {
-        let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{},\"type\":\"Topology\"}";
+        let topo_json_str =
+            "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{},\"type\":\"Topology\"}";
         let topo = Topology {
-            arcs: vec![
-                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
-            ],
+            arcs: vec![vec![vec![2.2, 2.2], vec![3.3, 3.3]]],
             objects: vec![],
             bbox: None,
             transform: None,
@@ -213,7 +225,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(e) => assert_eq!(e, Error::TopologyExpectedObjects),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -226,7 +238,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(e) => assert_eq!(e, Error::TopologyExpectedArcs),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -239,16 +251,14 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(e) => assert_eq!(e, Error::TopoJsonUnknownType),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
     #[test]
     fn list_names_objects() {
         let topo = Topology {
-            arcs: vec![
-                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
-            ],
+            arcs: vec![vec![vec![2.2, 2.2], vec![3.3, 3.3]]],
             objects: vec![NamedGeometry {
                 name: String::from("example"),
                 geometry: Geometry {
@@ -272,9 +282,7 @@ mod tests {
     fn encode_decode_topology_arcs_object() {
         let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{\"example\":{\"arcs\":[0],\"type\":\"LineString\"}},\"type\":\"Topology\"}";
         let topo = Topology {
-            arcs: vec![
-                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
-            ],
+            arcs: vec![vec![vec![2.2, 2.2], vec![3.3, 3.3]]],
             objects: vec![NamedGeometry {
                 name: String::from("example"),
                 geometry: Geometry {
@@ -305,9 +313,7 @@ mod tests {
     fn encode_decode_topology_arcs_transform() {
         let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{},\"transform\":{\"scale\":[0.12,0.12],\"translate\":[1.1,1.1]},\"type\":\"Topology\"}";
         let topo = Topology {
-            arcs: vec![
-                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
-            ],
+            arcs: vec![vec![vec![2.2, 2.2], vec![3.3, 3.3]]],
             objects: vec![],
             bbox: None,
             transform: Some(TransformParams {
@@ -329,54 +335,43 @@ mod tests {
         assert_eq!(decoded_topo, topo);
     }
 
-
     #[test]
     fn encode_decode_topology_arcs_transform_geom_collection() {
         let topo_json_str = "{\"arcs\":[[[2.2,2.2],[3.3,3.3]]],\"objects\":{\"example\":{\"geometries\":[{\"coordinates\":[100.0,0.0],\"properties\":{\"prop1\":1},\"type\":\"Point\"},{\"arcs\":[0],\"type\":\"LineString\"}],\"properties\":{\"prop0\":0},\"type\":\"GeometryCollection\"}},\"transform\":{\"scale\":[0.12,0.12],\"translate\":[1.1,1.1]},\"type\":\"Topology\"}";
         // Properties for the geometry collection:
         let mut properties0 = JsonObject::new();
-        properties0.insert(
-            String::from("prop0"),
-            serde_json::to_value(0).unwrap(),
-        );
+        properties0.insert(String::from("prop0"), serde_json::to_value(0).unwrap());
         // Properties for one the geometry in the geometry collection:
         let mut properties1 = JsonObject::new();
-        properties1.insert(
-            String::from("prop1"),
-            serde_json::to_value(1).unwrap(),
-        );
+        properties1.insert(String::from("prop1"), serde_json::to_value(1).unwrap());
 
         let topo = Topology {
-            arcs: vec![
-                vec![vec![2.2, 2.2], vec![3.3, 3.3]]
-            ],
-            objects: vec![
-                NamedGeometry {
-                    name: String::from("example"),
-                    geometry: Geometry {
-                        bbox: None,
-                        id: None,
-                        value: Value::GeometryCollection(vec![
-                            Geometry {
-                                bbox: None,
-                                id: None,
-                                value: Value::Point(vec![100.0, 0.0]),
-                                properties: Some(properties1),
-                                foreign_members: None,
-                            },
-                            Geometry {
-                                bbox: None,
-                                id: None,
-                                value: Value::LineString(vec![0]),
-                                properties: None,
-                                foreign_members: None,
-                            },
-                        ]),
-                        properties: Some(properties0),
-                        foreign_members: None,
-                    },
+            arcs: vec![vec![vec![2.2, 2.2], vec![3.3, 3.3]]],
+            objects: vec![NamedGeometry {
+                name: String::from("example"),
+                geometry: Geometry {
+                    bbox: None,
+                    id: None,
+                    value: Value::GeometryCollection(vec![
+                        Geometry {
+                            bbox: None,
+                            id: None,
+                            value: Value::Point(vec![100.0, 0.0]),
+                            properties: Some(properties1),
+                            foreign_members: None,
+                        },
+                        Geometry {
+                            bbox: None,
+                            id: None,
+                            value: Value::LineString(vec![0]),
+                            properties: None,
+                            foreign_members: None,
+                        },
+                    ]),
+                    properties: Some(properties0),
+                    foreign_members: None,
                 },
-            ],
+            }],
             bbox: None,
             foreign_members: None,
             transform: Some(TransformParams {
@@ -409,10 +404,7 @@ mod tests {
         );
         // Properties for the 2nd geometry of the geometry collection:
         let mut properties1 = properties0.clone();
-        properties1.insert(
-            String::from("prop1"),
-            serde_json::to_value(0).unwrap(),
-        );
+        properties1.insert(String::from("prop1"), serde_json::to_value(0).unwrap());
         // Properties for the 3rd geometry of the geometry collection:
         let mut properties2 = properties0.clone();
         let mut inner_prop = JsonObject::new();
@@ -427,50 +419,56 @@ mod tests {
 
         let topo = Topology {
             bbox: None,
-            objects: vec![
-                NamedGeometry {
-                    name: String::from("example"),
-                    geometry: Geometry {
-                        bbox: None,
-                        id: None,
-                        value: Value::GeometryCollection(vec![
-                            Geometry {
-                                bbox: None,
-                                id: None,
-                                value: Value::Point(vec![4000.0, 5000.0]),
-                                properties: Some(properties0),
-                                foreign_members: None
-                            },
-                            Geometry {
-                                bbox: None,
-                                id: None,
-                                value: Value::LineString(vec![0]),
-                                properties: Some(properties1),
-                                foreign_members: None
-                            },
-                            Geometry {
-                                bbox: None,
-                                id: None,
-                                value: Value::Polygon(vec![vec![1]]),
-                                properties: Some(properties2),
-                                foreign_members: None
-                            }
-                        ]),
-                        properties: None,
-                        foreign_members: None
-                    }
-                }],
+            objects: vec![NamedGeometry {
+                name: String::from("example"),
+                geometry: Geometry {
+                    bbox: None,
+                    id: None,
+                    value: Value::GeometryCollection(vec![
+                        Geometry {
+                            bbox: None,
+                            id: None,
+                            value: Value::Point(vec![4000.0, 5000.0]),
+                            properties: Some(properties0),
+                            foreign_members: None,
+                        },
+                        Geometry {
+                            bbox: None,
+                            id: None,
+                            value: Value::LineString(vec![0]),
+                            properties: Some(properties1),
+                            foreign_members: None,
+                        },
+                        Geometry {
+                            bbox: None,
+                            id: None,
+                            value: Value::Polygon(vec![vec![1]]),
+                            properties: Some(properties2),
+                            foreign_members: None,
+                        },
+                    ]),
+                    properties: None,
+                    foreign_members: None,
+                },
+            }],
             transform: Some(TransformParams {
                 scale: [0.0005000500050005, 0.0001000100010001],
-                translate: [100.0, 0.0]
+                translate: [100.0, 0.0],
             }),
             arcs: vec![
                 vec![
-                    vec![4000.0, 0.0], vec![1999.0, 9999.0],
-                    vec![2000.0, -9999.0], vec![2000.0, 9999.0]],
+                    vec![4000.0, 0.0],
+                    vec![1999.0, 9999.0],
+                    vec![2000.0, -9999.0],
+                    vec![2000.0, 9999.0],
+                ],
                 vec![
-                    vec![0.0, 0.0], vec![0.0, 9999.0],
-                    vec![2000.0, 0.0], vec![0.0, -9999.0], vec![-2000.0, 0.0]]
+                    vec![0.0, 0.0],
+                    vec![0.0, 9999.0],
+                    vec![2000.0, 0.0],
+                    vec![0.0, -9999.0],
+                    vec![-2000.0, 0.0],
+                ],
             ],
             foreign_members: None,
         };

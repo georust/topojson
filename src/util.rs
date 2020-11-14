@@ -13,8 +13,7 @@
 // limitations under the License.
 
 use json::{JsonObject, JsonValue};
-use {Bbox, Error, Geometry, NamedGeometry, Position, Arc, ArcIndexes, TransformParams};
-
+use {Arc, ArcIndexes, Bbox, Error, Geometry, NamedGeometry, Position, TransformParams};
 
 pub fn expect_type(value: &mut JsonObject) -> Result<String, Error> {
     let prop = expect_property(value, "type")?;
@@ -185,7 +184,7 @@ pub fn get_scale_translate(object: &mut JsonObject) -> Result<Option<TransformPa
                 _ => return Err(Error::ScaleExpectedArray),
             };
             let scale = scale_array
-                .into_iter()
+                .iter()
                 .map(|i| i.as_f64().ok_or(Error::ScaleExpectedNumericValues))
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -198,7 +197,7 @@ pub fn get_scale_translate(object: &mut JsonObject) -> Result<Option<TransformPa
                 _ => return Err(Error::TranslateExpectedArray),
             };
             let translate = translate_array
-                .into_iter()
+                .iter()
                 .map(|i| i.as_f64().ok_or(Error::TranslateExpectedNumericValues))
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -206,7 +205,7 @@ pub fn get_scale_translate(object: &mut JsonObject) -> Result<Option<TransformPa
                 scale: [scale[0], scale[1]],
                 translate: [translate[0], translate[1]],
             }))
-        },
+        }
     }
 }
 
@@ -236,11 +235,11 @@ pub fn get_objects(object: &mut JsonObject) -> Result<Vec<NamedGeometry>, Error>
                 let g = expect_owned_object(objects_json.remove(&key).unwrap())?;
                 res.push(NamedGeometry {
                     name: key,
-                    geometry: Geometry::from_json_object(g)?
+                    geometry: Geometry::from_json_object(g)?,
                 });
             }
             Ok(res)
-        },
+        }
         Some(_) | None => Err(Error::TopologyExpectedObjects),
     }
 }
