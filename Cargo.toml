@@ -1,7 +1,7 @@
 [package]
 name = "topojson"
 description = "TopoJSON utilities for Rust"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Alex Morega <alex@grep.ro>", "Matthieu Viry <matthieu.viry@cnrs.fr>"]
 license = "MIT"
 repository = "https://github.com/georust/topojson"
