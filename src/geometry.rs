@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use json::{Deserialize, Deserializer, JsonObject, JsonValue, Serialize, Serializer};
+use crate::json::{Deserialize, Deserializer, JsonObject, JsonValue, Serialize, Serializer};
 
-use {topojson::Type, util, ArcIndexes, Bbox, Error, Position};
+use crate::{topojson::Type, util, ArcIndexes, Bbox, Error, Position};
 
 /// The underlying Geometry value (which may contain Position or Arc indexes)
 #[derive(Clone, Debug, PartialEq)]
@@ -223,9 +223,9 @@ pub struct NamedGeometry {
 
 #[cfg(test)]
 mod tests {
-    use json::JsonObject;
+    use crate::json::JsonObject;
     use serde_json;
-    use {Error, Geometry, TopoJson, Value};
+    use crate::{Error, Geometry, TopoJson, Value};
 
     fn encode(geometry: &Geometry) -> String {
         serde_json::to_string(&geometry).unwrap()

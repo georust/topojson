@@ -15,8 +15,8 @@
 use std::fmt;
 use std::str::FromStr;
 
-use json::{self, Deserialize, Deserializer, JsonObject, Serialize, Serializer};
-use {Error, Geometry, Topology};
+use crate::json::{self, Deserialize, Deserializer, JsonObject, Serialize, Serializer};
+use crate::{Error, Geometry, Topology};
 
 /// TopoJSON Objects (either Topology or Geometry)
 ///

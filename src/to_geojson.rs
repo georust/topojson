@@ -16,8 +16,8 @@ extern crate log;
 
 use geojson::feature::Id as FeatureId;
 use geojson::{Feature, FeatureCollection, Geometry as GeoJsonGeometry, Value as GeoJsonGeomValue};
-use json::JsonValue;
-use {
+use crate::json::JsonValue;
+use crate::{
     Arc, Error, Geometry, NamedGeometry, Position, Topology, TransformParams,
     Value as TopoJsonGeomValue,
 };
@@ -233,7 +233,7 @@ pub fn to_geojson(topo: &Topology, key: &str) -> Result<FeatureCollection, Error
 #[cfg(test)]
 mod tests {
     use geojson::GeoJson;
-    use {to_geojson, Error, TopoJson};
+    use crate::{to_geojson, Error, TopoJson};
 
     fn decode(json_string: &str) -> TopoJson {
         json_string.parse().unwrap()
