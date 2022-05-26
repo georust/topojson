@@ -14,13 +14,13 @@
 
 extern crate log;
 
-use geojson::feature::Id as FeatureId;
-use geojson::{Feature, FeatureCollection, Geometry as GeoJsonGeometry, Value as GeoJsonGeomValue};
 use crate::json::JsonValue;
 use crate::{
     Arc, Error, Geometry, NamedGeometry, Position, Topology, TransformParams,
     Value as TopoJsonGeomValue,
 };
+use geojson::feature::Id as FeatureId;
+use geojson::{Feature, FeatureCollection, Geometry as GeoJsonGeometry, Value as GeoJsonGeomValue};
 
 fn decode_arc(arc: &[Position], tr: &Option<TransformParams>) -> Vec<Position> {
     match tr {
@@ -75,9 +75,9 @@ pub fn convert_geom_coords(
     tr: &Option<TransformParams>,
 ) -> Result<Feature, Error> {
     let geoj_geom_value = match &geom.value {
-        TopoJsonGeomValue::Point(ref pos) => GeoJsonGeomValue::Point(make_pt(&pos, tr)),
+        TopoJsonGeomValue::Point(ref pos) => GeoJsonGeomValue::Point(make_pt(pos, tr)),
         TopoJsonGeomValue::MultiPoint(positions) => {
-            GeoJsonGeomValue::MultiPoint(positions.iter().map(|pos| make_pt(&pos, tr)).collect())
+            GeoJsonGeomValue::MultiPoint(positions.iter().map(|pos| make_pt(pos, tr)).collect())
         }
         _ => unreachable!(),
     };
@@ -107,7 +107,7 @@ pub fn make_ring(arcs: &[Arc], ixs: &[i32], tr: &Option<TransformParams>) -> Vec
             ix = *_ix as usize;
         }
         let line_arc = &arcs[ix];
-        let mut line = decode_arc(&line_arc, &tr);
+        let mut line = decode_arc(line_arc, tr);
         if revert {
             line.reverse();
         }
@@ -123,18 +123,18 @@ pub fn convert_geom_arcs(
 ) -> Result<Feature, Error> {
     let geom_value = match &geom.value {
         TopoJsonGeomValue::LineString(ref arc_indexes) => {
-            GeoJsonGeomValue::LineString(make_ring(&arcs, arc_indexes, &tr))
+            GeoJsonGeomValue::LineString(make_ring(arcs, arc_indexes, tr))
         }
         TopoJsonGeomValue::MultiLineString(arc_indexes) => GeoJsonGeomValue::MultiLineString(
             arc_indexes
                 .iter()
-                .map(|ixs| make_ring(&arcs, ixs, &tr))
+                .map(|ixs| make_ring(arcs, ixs, tr))
                 .collect(),
         ),
         TopoJsonGeomValue::Polygon(arc_indexes) => GeoJsonGeomValue::Polygon(
             arc_indexes
                 .iter()
-                .map(|ixs| make_ring(&arcs, ixs, &tr))
+                .map(|ixs| make_ring(arcs, ixs, tr))
                 .collect(),
         ),
         TopoJsonGeomValue::MultiPolygon(arcs_indexes) => {
@@ -143,7 +143,7 @@ pub fn convert_geom_arcs(
                 polygons.push(
                     _arc_indexes_poly
                         .iter()
-                        .map(|ixs| make_ring(&arcs, ixs, &tr))
+                        .map(|ixs| make_ring(arcs, ixs, tr))
                         .collect(),
                 );
             }
@@ -175,13 +175,13 @@ pub fn convert_geometry_collection(
             for g in geoms.iter() {
                 match &g.value {
                     TopoJsonGeomValue::Point(..) | TopoJsonGeomValue::MultiPoint(..) => {
-                        features.push(convert_geom_coords(&g, &tr)?);
+                        features.push(convert_geom_coords(g, tr)?);
                     }
                     TopoJsonGeomValue::LineString(..)
                     | TopoJsonGeomValue::MultiLineString(..)
                     | TopoJsonGeomValue::Polygon(..)
                     | TopoJsonGeomValue::MultiPolygon(..) => {
-                        features.push(convert_geom_arcs(&g, &arcs, &tr)?);
+                        features.push(convert_geom_arcs(g, arcs, tr)?);
                     }
                     // According to https://github.com/topojson/topojson-client#feature
                     // a geometry collection of geometry collections should be mapped to
@@ -232,8 +232,8 @@ pub fn to_geojson(topo: &Topology, key: &str) -> Result<FeatureCollection, Error
 
 #[cfg(test)]
 mod tests {
-    use geojson::GeoJson;
     use crate::{to_geojson, Error, TopoJson};
+    use geojson::GeoJson;
 
     fn decode(json_string: &str) -> TopoJson {
         json_string.parse().unwrap()

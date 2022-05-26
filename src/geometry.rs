@@ -224,7 +224,6 @@ pub struct NamedGeometry {
 #[cfg(test)]
 mod tests {
     use crate::json::JsonObject;
-    use serde_json;
     use crate::{Error, Geometry, TopoJson, Value};
 
     fn encode(geometry: &Geometry) -> String {
