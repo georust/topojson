@@ -23,7 +23,7 @@ jobs:
       - Build
       - Test
       - Clippy
-      - Rustfmt
+      - fmt
     steps:
       - name: Mark the job as a success
         if: success()
