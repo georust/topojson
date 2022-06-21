@@ -152,19 +152,19 @@ pub type ArcIndexes = Vec<i32>;
 pub(crate) mod util;
 
 mod topojson;
-pub use topojson::TopoJson;
+pub use crate::topojson::TopoJson;
 
 mod geometry;
-pub use geometry::{Geometry, NamedGeometry, Value};
+pub use crate::geometry::{Geometry, NamedGeometry, Value};
 
 mod topology;
-pub use topology::{Topology, TransformParams};
+pub use crate::topology::{Topology, TransformParams};
 
 mod to_geojson;
-pub use to_geojson::to_geojson;
+pub use crate::to_geojson::to_geojson;
 
 mod error;
-pub use error::Error;
+pub use crate::error::Error;
 
 mod json {
     pub use serde::{Deserialize, Deserializer, Serialize, Serializer};

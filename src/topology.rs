@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use json::{Deserialize, Deserializer, JsonObject, Serialize, Serializer};
+use crate::json::{Deserialize, Deserializer, JsonObject, Serialize, Serializer};
 
-use serde_json;
-
-use {util, Arc, Bbox, Error, NamedGeometry, TopoJson};
+use crate::{util, Arc, Bbox, Error, NamedGeometry, TopoJson};
 
 /// Transforms
 ///
@@ -169,9 +167,9 @@ impl<'de> Deserialize<'de> for Topology {
     }
 }
 
-impl Into<Option<Topology>> for TopoJson {
-    fn into(self) -> Option<Topology> {
-        match self {
+impl From<TopoJson> for Option<Topology> {
+    fn from(topo: TopoJson) -> Option<Topology> {
+        match topo {
             TopoJson::Topology(i) => Some(i),
             _ => None,
         }
@@ -180,9 +178,8 @@ impl Into<Option<Topology>> for TopoJson {
 
 #[cfg(test)]
 mod tests {
-    use json::JsonObject;
-    use serde_json;
-    use {Error, Geometry, NamedGeometry, TopoJson, Topology, TransformParams, Value};
+    use crate::json::JsonObject;
+    use crate::{Error, Geometry, NamedGeometry, TopoJson, Topology, TransformParams, Value};
 
     fn encode(topo: &Topology) -> String {
         serde_json::to_string(&topo).unwrap()
