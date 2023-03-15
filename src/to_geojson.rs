@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate log;
-
 use crate::json::JsonValue;
 use crate::{
     Arc, Error, Geometry, NamedGeometry, Position, Topology, TransformParams,
@@ -63,10 +61,7 @@ fn make_feature_id(id: Option<JsonValue>) -> Option<FeatureId> {
     match id {
         Some(JsonValue::Number(i)) => Some(FeatureId::Number(i)),
         Some(JsonValue::String(i)) => Some(FeatureId::String(i)),
-        _ => {
-            log::warn!("Ignoring feature id property because of invalid type");
-            None
-        }
+        _ => None,
     }
 }
 
