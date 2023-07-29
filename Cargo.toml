@@ -3,12 +3,15 @@ name = "topojson"
 description = "TopoJSON utilities for Rust"
 version = "0.5.1"
 edition = "2021"
-authors = ["Alex Morega <alex@grep.ro>", "Matthieu Viry <matthieu.viry@cnrs.fr>"]
+authors = [
+  "Alex Morega <alex@grep.ro>",
+  "Matthieu Viry <matthieu.viry@cnrs.fr>",
+]
 license = "MIT"
 repository = "https://github.com/georust/topojson"
 
 [dependencies]
 serde = "~1.0"
 serde_json = "~1.0"
-geojson = ">=0.16.0, <0.24.0"
+geojson = ">=0.16.0, <0.25.0"
 log = "0.4.0"
