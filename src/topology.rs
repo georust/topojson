@@ -30,11 +30,11 @@ impl<'a> From<&'a TransformParams> for JsonObject {
         let mut map = JsonObject::new();
         map.insert(
             String::from("scale"),
-            ::serde_json::to_value(&transform.scale).unwrap(),
+            ::serde_json::to_value(transform.scale).unwrap(),
         );
         map.insert(
             String::from("translate"),
-            ::serde_json::to_value(&transform.translate).unwrap(),
+            ::serde_json::to_value(transform.translate).unwrap(),
         );
         map
     }
